@@ -1,24 +1,38 @@
 import cv2 #opencv itself
 import numpy as np # matrix manipulations
 from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 ###########################################################
 ### Initialisation
 
 colour_lookup =    ["Black", "Brown", "Red" , "Orange", "Yellow", "Green", "Blue" , "Violet", "Grey" , "White", "Gold", "Silver"]
 
+training_data_dir = 'data_training/testing/' # Root directory of the training data
+
 # Load the trained CNN model
 Colour_Classification_CNN = load_model('models/Colour_Classification_CNN.keras')
 
-band = cv2.imread('data_bands/training/5/15_2_4.jpg')
+# Set up the data generator for testing dataset
+test_datagen = ImageDataGenerator(rescale=1./255)
 
-band_RGB = cv2.cvtColor(band, cv2.COLOR_BGR2RGB)    # CNN is trained using RGB images
-band_RGB = band_RGB / 255.0                         # CNN is trained using images with pixel values between 0 and 1
-band = band.reshape(1, 30, 12, 3)                   # CNN expects batch size, height, width, channels
-band_predictions = Colour_Classification_CNN.predict(band, verbose=0)                # Use the CNN model to predict the class of the band
-band_class = np.argmax(band_predictions)            # Classify as the class with the highest probability
-if (band_class == 6): band_class = 10 #TEMP
+# Load the testing dataset
+test_set = test_datagen.flow_from_directory(
+    training_data_dir,
+    target_size=(30, 12),
+    batch_size=1,
+    class_mode='sparse',
+    shuffle=False
+)
 
-print(str(band_class) + ': ' + colour_lookup[int(band_class)])
 
-cv2.waitKey(0) # waits for user to press any key 
+###########################################################
+### Model Validation
+
+loss, accuracy = Colour_Classification_CNN.evaluate(test_set)
+print('FINAL Validation loss:', loss)
+print('FINAL Validation accuracy:', accuracy)
+
+###########################################################
+
+cv2.waitKey(0) # waits for user to press any key
