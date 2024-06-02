@@ -1,8 +1,31 @@
-﻿import cv2 #opencv itself
+﻿from itertools import filterfalse
+import cv2 #opencv itself
 import numpy as np # matrix manipulations
 from tensorflow.keras.models import load_model
 
 import Functions as func
+
+##################################################################################################################################################################################################
+### Input Image Preprocessing ####################################################################################################################################################################
+# ╰┈➤ Preprocess the input image to resize and filter out noise:
+
+def Input_Image_Preprocessing(input_image, max_input_res):
+    
+    ### Resize Image ---------------------------------------------------------------------------------------------------------------------------------------------------------
+    # ╰┈➤ Resize input image to reduce processing time and memory usage, and allow for more consistent morphological operations:
+    if (input_image.shape[0] > max_input_res[0] or input_image.shape[1] > max_input_res[1]):
+        h_scale = input_image.shape[0] / max_input_res[0]
+        w_scale = input_image.shape[1] / max_input_res[1]
+    
+        scale = max(h_scale, w_scale)
+        new_dim = [int(input_image.shape[1] / scale), int(input_image.shape[0] / scale)]
+        input_image = cv2.resize(input_image, new_dim)
+
+    ### Median Filter ----------------------------------------------------------------------------------------------
+    # ╰┈➤ To remove noise but preserve edges
+    filtered_input_image = cv2.bilateralFilter(input_image,25,25,25)
+
+    return filtered_input_image
 
 #################################################################################################################################################################################################
 ### Resistor Segmentation #######################################################################################################################################################################
@@ -40,7 +63,7 @@ def Resistor_Segmentation(filtered_input_image):
 ### Resistor Extraction #########################################################################################################################################################################
 # ╰┈➤ Extract individual resistors to seperate images from the segmentation mask:
 
-def Resistor_Extraction(segmentation_mask, filtered_input_image, min_resistor_res, target_resistor_width):
+def Resistor_Extraction(segmentation_mask, preprocessed_input_image, min_resistor_res, target_resistor_width):
     
     ### Gaussian Blur --------------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Blur mask to merge nearby outlines:
@@ -78,7 +101,7 @@ def Resistor_Extraction(segmentation_mask, filtered_input_image, min_resistor_re
                                         rect,
                                         target_width = target_resistor_width)
         
-        resistor = func.extractImgUsingRect(filtered_input_image.copy(),            #Extract resistor using bounding box
+        resistor = func.extractImgUsingRect(preprocessed_input_image.copy(),        #Extract resistor using bounding box
                                             rect, 
                                             target_width = target_resistor_width)
     
@@ -86,7 +109,7 @@ def Resistor_Extraction(segmentation_mask, filtered_input_image, min_resistor_re
         extracted_resistors.append(resistor)                                        #Append resistor to return array
     
 
-    return (extracted_masks, extracted_resistors)
+    return (extracted_masks, extracted_resistors, bounding_rects)
 
 
 
@@ -169,7 +192,8 @@ def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
     
     rng = int(target_resistor_width/10)                                         #Horizontal range of white pixels required to qualify as start of resistor body
 
-    y1, y2 = -1, -1                                                         ######### Vertical bounds: -----
+    ### Vertical Bounds --------------------------------------------------------#----------------------------#
+    y1, y2 = -1, -1                                                         
     for i in range(mid_h-1):                                                    #Iterate through half the mask height:
         if (np.all(mask[i, mid_w-rng:mid_w+rng] == 255)) and (y1 == -1):            #If all central pixels in the horizontal range are white, set y1 (upper bounds)
             y1 = i
@@ -188,7 +212,8 @@ def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
         
     if (h_inner < 14): return None                                              #If vertical bounds are too small, assume invalid resistor extraction and return None
     
-    x1, x2 = -1, -1                                                         ######### Horizontal bounds: -----
+    ### Horizontal Bounds ------------------------------------------------------#----------------------------#
+    x1, x2 = -1, -1                                                         
     for i in range(mid_w-1):                                                    #Iterate through half the mask width:
         if (np.all(mask[y1:y2, i] == 255)) and (x1 == -1):                          #If all pixels in the found vertical bounds are white, set x1 (left bounds)
             x1 = i
@@ -277,7 +302,7 @@ def Band_Segmentation(inner_resistor):
 ### Band Extraction #############################################################################################################################################################################     
 # ╰┈➤ Extract the individual bands from inner resistor cutout using the band mask:
 
-def Band_Extraction(mask, inner_resistor, bodycolour_abs_diff):
+def Band_Extraction(mask, inner_resistor, bodycolour_abs_diff, target_band_shape, object_index):
     
     ### Mask Shape Extraction --------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Extract mask dimensions and midpoints:
@@ -290,187 +315,305 @@ def Band_Extraction(mask, inner_resistor, bodycolour_abs_diff):
     
     min_width = 3                       #Minimum width required for a band to be considered valid    
     
-    extracted_bands_info = []                                                   #Init extracted bands info return array
+    bands_info = []                                                             #Init extracted bands info return array
     bBand = False                                                               #Init bool used to keep track of band presence
     x0 = 0
-    for j in range(w):                                                          #Iterate through mask width:
+    for i in range(w):                                                          #Iterate through mask width:
         
-        if (mask[mid_h, j] == 255) and (bBand == False):                            #If white pixel found and no band presence currently tracked:
+        if (mask[mid_h, i] == 255) and (bBand == False):                            #If white pixel found and no band presence currently tracked:
             bBand = True                                                                #Start tracking band presence
-            x0 = j                                                                      #Set band start point
+            x0 = i                                                                      #Set band start point
             
-        if (mask[mid_h, j] == 0) and (bBand == True):                               #If black pixel found and band presence currently tracked:
+        if (mask[mid_h, i] == 0) and (bBand == True):                               #If black pixel found and band presence currently tracked:
             bBand = False                                                               #Stop tracking band presence
-            band_info = [x0, j, j-x0]                                                   #Save band info (start, end, width)
+            band_info = [x0, i, i-x0]                                                   #Save band info (start, end, width)
             if band_info[2] > min_width:                                                #If band width is above minimum threshold, append to return array
-                extracted_bands_info.append(band_info)
+                bands_info.append(band_info)
                 
-        if (j == w-1) and (bBand == True):                                          #If end of mask reached and band presence currently tracked:
+        if (i == w-1) and (bBand == True):                                          #If end of mask reached and band presence currently tracked:
             band_info = [x0, w, w-x0]                                                   #Save band info (start, end, width)
             if band_info[2] > min_width:                                                #If band width is above minimum threshold, append to return array
-                extracted_bands_info.append(band_info)
+                bands_info.append(band_info)
     
-    if (len(extracted_bands_info) < 3): return None                             #If less than three bands found, assume invalid extraction and return None
-                                                                                        # (Too few to form a valid resistor or extrapolate missing bands)
+    if (len(bands_info) < 3): return (None, None, None)                             #If less than three bands found, assume invalid extraction and return None
+                                                                                    # (Too few to form a valid resistor or extrapolate missing bands)
                     
     ### Extrapolate Missing Bands ----------------------------------------------------------------------------------------------------------------------------------------
-    # ╰┈➤ Analyse band widths and seperations to extrapolate the locations of missing bands and search for their presense              
-
-        
-    #If there are less than 5 bands, or there are 5 bands with one touching the image edge (potential false positive):
-    if (len(bands_info) < 5) or (len(bands_info) == 5 and (bands_info[0][0] == 0 or bands_info[-1][1] == w)):
+    # ╰┈➤ Analyse band widths and separations to extrapolate the locations of missing bands and search for their presense              
+    
+    if ((len(bands_info) < 5)                                                   #If there are less than 5 bands, or there are 5 bands with one touching the image edge (potential false positive):
+     or (len(bands_info) == 5 and (bands_info[0][0] == 0 or bands_info[-1][1] == w))):
             
-        band_seperations = []
-        band_widths = []
-        for j in range(len(bands_info) - 1):
-            band_seperations.append(bands_info[j+1][0] - bands_info[j][1])
-            band_widths.append(bands_info[j][2])
-        band_widths.append(bands_info[-1][2])
+        band_separations = []                                                       #Init band separations array
+        band_widths = []                                                            #Init band widths array
+        for i in range(len(bands_info) - 1):                                        #Iterate through bands (excl. last band):
+            band_separations.append(bands_info[i+1][0] - bands_info[i][1])              #Save the separation between the band and the next band
+            band_widths.append(bands_info[i][2])                                        #Save the width of the band
+        band_widths.append(bands_info[-1][2])                                       #Save the width of the last band
         
-        #Find the largest seperation between bands
-        largest_separation_index = np.argmax(band_seperations)
-        largest_separation = band_seperations[largest_separation_index]
+        largest_separation_index = np.argmax(band_separations)                      #Find the index of the largest separation between bands
+        largest_separation = band_separations[largest_separation_index]             #Find the largest separation between bands
         
-        #Find the average band seperation EXCLUDING the largest seperation
-        typical_seperations = band_seperations.copy()
-        typical_seperations.pop(largest_separation_index)
-        typical_seperation = np.mean(typical_seperations)
+        typical_separations = band_separations.copy()                               
+        typical_separations.pop(largest_separation_index)                           #Build an array of band separations EXCLUDING the largest separation
+        typical_separation = np.mean(typical_separations)                           #Find the typical band separation EXCLUDING the largest separation
 
-        ave_band_width = np.mean(band_widths)           #Find the average band width
-        target_band_width = int(0.8 * ave_band_width)   #Find the target band width as 0.75 * average band width
+        ave_band_width = np.mean(band_widths)                                       #Find the average band width
+        target_band_width = int(0.8 * ave_band_width)                               #Find the target band width as 0.75 * average band width
                     
-        start_seperation = bands_info[0][0]     #Find the gap between the image start and the first band
-        end_seperation = w - bands_info[-1][1]  #Find the gap between the image end and the last band
+        start_separation = bands_info[0][0]                                         #Find the gap between the image start and the first band
+        end_separation = w - bands_info[-1][1]                                      #Find the gap between the image end and the last band
         
-        #If the gap between the start of image and first band is sufficiently large, search for a missing band:
-        if (start_seperation - target_band_width >= 1.35 * typical_seperation):
-            #Find the middle point between the image start and the first band
-            xm = 0 + int(start_seperation/2)
-            
-            print("\nIndex: {} - Assuming missing band near start, searching...".format(i, xm))
+        ### Start of Image Search --------------------------------------------------#----------------------------#
+        if (start_separation - target_band_width >= 1.35 * typical_separation):     #If the gap between the start of image and first band is sufficiently large, search for a missing band:
+            xm = 0 + int(start_separation/2)                                            #Find the middle point between the image start and the first band
+            print("\nIndex: {} - Assuming missing band near start, searching...".format(object_index, xm))
+                                                                                        
+            missing_band, continuity = func.LocateMissingBand(xm, start_separation/2,   #Search for the missing band around xm with a search range of half the gap
+                                                              target_band_width, bodycolour_abs_diff)
                 
-            #Search for the missing band
-            abs_diff = extracted_resistors_inner_difference[i]
-            missing_band, continuity = func.LocateMissingBand(xm, start_seperation/2, target_band_width, abs_diff)
-                
-            #Given sufficient continuity, insert a new band
-            if (continuity >= 0.8):
-                bands_info.insert(0, missing_band)
+            if (continuity >= 0.8):                                                     
+                bands_info.insert(0, missing_band)                                          #Insert the missing band at the start of the bands info array
                 print("... Band located with continuity: {:.3f} -> Inserting band at: {}".format(continuity, missing_band[0]+int(missing_band[2]/2)))
 
-                new_seperation = bands_info[1][0] - bands_info[0][1]
-                if (new_seperation > largest_separation):
-                    largest_separation = new_seperation
-                    largest_separation_index = 0
-                else: largest_separation_index += 1
+                new_separation = bands_info[1][0] - bands_info[0][1]                        #Find the new separation between the first two bands
+                if (new_separation > largest_separation):                                   #If the new separation is larger than the previous largest separation:
+                    largest_separation = new_separation                                         #Update the largest separation
+                    largest_separation_index = 0                                                #Update the index of the largest separation
+                else: largest_separation_index += 1                                         #Otherwise, nudge the index of the largest separation by 1
                     
             else: print("... Band not located - Continuity too low: {:.3f}".format(continuity))
-            
-        #If the gap between the last band and end of image is sufficiently large, search for a missing band:
-        if (end_seperation - target_band_width >= 1.35 * typical_seperation):
-            #Find the middle point between the last band and end of image
-            xm = bands_info[-1][1] + int(end_seperation/2)
+        
+        ### End of Image Search ----------------------------------------------------#----------------------------#
+        if (end_separation - target_band_width >= 1.35 * typical_separation):       #If the gap between the last band and end of image is sufficiently large, search for a missing band:
+            xm = bands_info[-1][1] + int(end_separation/2)                              #Find the middle point between the last band and end of image
+            print("\nIndex: {} - Assuming missing band near end, searching...".format(object_index, xm))
+                                                                                        
+            missing_band, continuity = func.LocateMissingBand(xm, end_separation/2,     #Search for the missing band around xm with a search range of half the gap
+                                                              target_band_width, bodycolour_abs_diff)
                 
-            print("\nIndex: {} - Assuming missing band near end, searching...".format(i, xm))
-                
-            #Search for the missing band
-            abs_diff = extracted_resistors_inner_difference[i]
-            missing_band, continuity = func.LocateMissingBand(xm, end_seperation/2, target_band_width, abs_diff)
-                
-            #Given sufficient continuity, insert a new band
-            if (continuity >= 0.8):
-                bands_info.append(missing_band)
+            if (continuity >= 0.8):                                                     #Given the located band is of sufficient continuity:
+                bands_info.append(missing_band)                                             #Append the missing band to the end of the bands info array
                 print("... Band located with continuity: {:.3f} -> Inserting band at: {}".format(continuity, missing_band[0]+int(missing_band[2]/2)))
             else: print("... Band not located - Continuity too low: {:.3f}".format(continuity))
-            
-        #If the largest seperation is sufficiently large, search for a missing band:
-        if (largest_separation - target_band_width >= 1.35 * typical_seperation):
-            #Find the middle point between the two bands
-            xm = bands_info[largest_separation_index][1] + int(largest_separation/2)
-             
-            print("\nIndex: {} - Assuming missing band near {}, searching...".format(i, xm))
-                
-            #Search for the missing band
-            abs_diff = extracted_resistors_inner_difference[i]
-            missing_band, continuity = func.LocateMissingBand(xm, largest_separation/2, target_band_width, abs_diff)
-                
-            #Given sufficient continuity, insert a new band
-            if (continuity >= 0.7):
-                bands_info.insert(largest_separation_index+1, missing_band)
+        
+        ### Largest separation Search ----------------------------------------------#----------------------------#
+        if (largest_separation - target_band_width >= 1.35 * typical_separation):   #If the largest separation is sufficiently large, search for a missing band:
+            xm = bands_info[largest_separation_index][1] + int(largest_separation/2)    #Find the middle point between the two bands
+            print("\nIndex: {} - Assuming missing band near {}, searching...".format(object_index, xm))
+                                                                                        
+            missing_band, continuity = func.LocateMissingBand(xm, largest_separation/2, #Search for the missing band around xm with a search range of half the gap
+                                                              target_band_width, bodycolour_abs_diff)
+
+            if (continuity >= 0.7):                                                     #Given the located band is of sufficient continuity:
+                bands_info.insert(largest_separation_index+1, missing_band)                 #Insert the missing band after the index of the largest separation
                 print("... Band located with continuity: {:.3f} -> Inserting band at: {}".format(continuity, missing_band[0]+int(missing_band[2]/2)))
             else: 
                 print("... Band not located - Continuity too low: {:.3f}".format(continuity))
                     
-                #If there are still less than 5 bands, give more leeway to insert a new band
-                if (len(bands_info) < 5) and (continuity >= 0.2):
-                    x0 = xm - int(target_band_width/2)
-                    x1 = xm + int(target_band_width/2)
+                if (len(bands_info) < 5) and (continuity >= 0.2):                       #Otherwise, if there are still less than 5 bands, give more leeway to insert a new band
+                    x0 = xm - int(target_band_width/2)                                      
+                    x1 = xm + int(target_band_width/2)                                      #Insert a band directly in the middle of the largest separation (rather than at search location)
                     bands_info.insert(largest_separation_index+1, [x0, x1, target_band_width])
                     print("... Still <5 bands -> Inserting band in middle at: {}".format(x0+int(target_band_width/2)))
-                        
-        #If there are still only 3 bands (spacing is uniform if this is still true), search for a missing band in each gap:
-        elif (len(bands_info) == 3):
+        
+        ### Uniform Spacing Search -------------------------------------------------#----------------------------#
+        elif (len(bands_info) == 3):                                                #If there are still only 3 bands (spacing is uniform if this is still true), search for a missing band in each gap:
             k = 0
-            for j in range(len(bands_info) - 1):
-                #Find the gap between the bands
-                seperation = bands_info[j+k+1][0] - bands_info[j+k][1]
-  
-                #Find the middle point between the two bands
-                xm = bands_info[j+k][1] + int(seperation/2)
-             
-                print("\nIndex: {} - Three uniformly seperated bands present, searching...".format(i, xm))
-
-                #Search for the missing band
-                abs_diff = extracted_resistors_inner_difference[i]
-                missing_band, continuity = func.LocateMissingBand(xm, seperation/2, target_band_width, abs_diff)
+            for i in range(len(bands_info) - 1):                                        #Iterate through bands (excl. last band):
+                separation = bands_info[i+k+1][0] - bands_info[i+k][1]                      #Find the gap between the bands
+                xm = bands_info[i+k][1] + int(separation/2)                                 #Find the middle point between the two bands
+                print("\nIndex: {} - Three uniformly seperated bands present, searching...".format(object_index, xm))
+                                                                                            
+                missing_band, continuity = func.LocateMissingBand(xm, separation/2,         #Search for the missing band around xm with a search range of half the gap
+                                                                  target_band_width, bodycolour_abs_diff)
                 
-                #Given sufficient continuity, insert a new band
-                if (continuity >= 0.55):
-                    bands_info.insert(j+k+1, missing_band)
-                    k = 1
+                if (continuity >= 0.55):                                                    #Given the located band is of sufficient continuity:
+                    bands_info.insert(i+k+1, missing_band)                                      #Insert the missing band after the index of the largest separation
+                    k = 1                                                                       #Increment k to account for the inserted band in the next iteration
                     print("... Band located with continuity: {:.3f} -> Inserting band at: {}".format(continuity, missing_band[0]+int(missing_band[2]/2)))
                 else: 
                     print("... Band not located - Continuity too low: {:.3f}".format(continuity))
-                       
-            
-    #If there are now more than 5 bands, remove any that are touching the image edge (likely false positives) 
-    if (len(bands_info) > 5):
-        if (bands_info[0][0] == 0):
+                            
+    ### Remove False Positives -------------------------------------------------------------------------------------------------------------------------------------------
+    # ╰┈➤ If the extrapolation or extraction process has resulted in more than 5 bands, remove assumed false positives  
+                    
+    if (len(bands_info) > 5):                                                           #If there are more than 5 bands:
+        if (bands_info[0][0] == 0):                                                         #Remove any band touching the image start (likely false positives) 
             bands_info.pop(0)
-        elif (bands_info[-1][1] == w):
+        elif (bands_info[-1][1] == w):                                                      #Otherwise, remove any band touching the image end (likely false positives) 
             bands_info.pop(-1)
-    #extracted_bands_info.append(bands_info)
+            
+    ### Find Largest Band Separation -------------------------------------------------------------------------------------------------------------------------------------
+    # ╰┈➤ Find the index of the largest separation between bands (used to determine the reading direction):
+            
+    band_separations = []                                                       #Init band separations array
+    for j in range(len(bands_info) - 1):                                        #Iterate through bands (excl. last band):
+        band_separations.append(bands_info[j+1][0] - bands_info[j][1])              #Save the separation between the band and the next band
         
-    #cv2.waitKey(0)
-
-    ##############################################################
-    ### Extract bands using obtained band info
-    extracted_bands = []
-    for i in range(len(extracted_bands_info)):
-        bands_info = extracted_bands_info[i]
-        resistor_inner = extracted_resistors_inner[i] #THIS WONT ALWAYS WORK!!!! Need to resolve mismatching indexes (kinda fixed)
+    largest_separation_index = np.argmax(band_separations)                      #Find the index of the largest separation between bands
+       
+    ### Band Image Extraction --------------------------------------------------------------------------------------------------------------------------------------------
+    # ╰┈➤ Using the obtained band info, extract the individual bands from the inner resistor cutout:
     
-        preview = resistor_inner.copy()
-        preview[:] = (0, 0, 0)
-    
-        bands = []
-        for band_info in bands_info:
-            band = resistor_inner[:, band_info[0]:band_info[1]]
+    preview = inner_resistor.copy()                                                     #Prepare preview image, same size as inner resistor
+    preview[:] = (0, 0, 0)                                                              #Make preview image black
         
-            preview[:, band_info[0]:band_info[1]] = band
+    extracted_bands = []                                                                #Init extracted bands return array
+    for band_info in bands_info:                                                        #Iterate through obtained band info:
+        band = inner_resistor[:, band_info[0]:band_info[1]]                                 #Cut out the band from the inner resistor image using the band info
         
-            band_resize = cv2.resize(band, target_band_shape)
-            bands.append(band_resize)
-        extracted_bands.append(bands)
+        preview[:, band_info[0]:band_info[1]] = band                                        #Overlay the extracted band on the preview image
+        
+        band_resize = cv2.resize(band, target_band_shape)                                   #Resize the band to the target shape for CNN classification
+        extracted_bands.append(band_resize)                                                 #Append the resized band to the return 
     
-        cv2.imshow(str(i) + "c", preview)
-    #cv2.waitKey(0)
+
+    return (extracted_bands, preview, largest_separation_index)
 
 
+
+#################################################################################################################################################################################################
+### Band Colour Classification ##################################################################################################################################################################     
+# ╰┈➤ Classify the colours of the extracted bands using the trained CNN model:
     
-def Band_Colour_Classification_CNN():
+def Band_Colour_Classification_CNN(extracted_bands, CNN):
 
-def Decode_Resistance():
+    extracted_band_classes = []                                                         #Init extracted bands classes return array
+    for band in extracted_bands:                                                        #Iterate through extracted bands:
+        band_RGB = cv2.cvtColor(band, cv2.COLOR_BGR2RGB)                                    #CNN is trained using RGB images
+        band_RGB = band_RGB / 255.0                                                         #CNN is trained using images with pixel values between 0 and 1
+        band_RGB = band_RGB.reshape(1, 30, 12, 3)                                           #CNN expects batch size, height, width, channels
+        band_predictions = CNN.predict(band_RGB, verbose=0)                                 #Use the CNN model to predict the class of the band
+        band_class = np.argmax(band_predictions)                                            #Classify as the class with the highest probability
+        extracted_band_classes.append(band_class)                                           #Append the obtained band classification to the return array
+    
+    return extracted_band_classes                                                       #Return the obtained band classifications
+
+
+
+#################################################################################################################################################################################################
+### Decode Resistance ###########################################################################################################################################################################     
+# ╰┈➤ Decode the resistance and tolerance value of the resistor using the extracted band classifications:
+
+def Decode_Resistance(band_classes, largest_separation_index, tolerance_lookup):
+    
+    decoded_resistance_num = []                                                         #Init decoded resistance number return array
+    decoded_resistance_string = []                                                      #Init decoded resistance string return array
+    decoded_tolerance = []                                                              #Init decoded tolerance return array
+               
+    band_classes = np.array(band_classes)                                               #Convert band classes to numpy array
+    num_bands = len(band_classes)                                                       #Find the number of bands
+    
+    bInvertReadDirection = False                                                        #Assume left to right reading direction
+    bAmbiguousReadDirection = True                                                      #Assume reading direction is ambiguous   
+        
+    ### 5-Band Decoding ----------------------------------------------------------------#----------------------------#
+    if (num_bands == 5):                                                                #If 5 bands are present:                                    
+   
+        if ((np.any(band_classes[3:5] > 9))                                             #If either of the last two bands are metallic (10-11)...
+            or (tolerance_lookup[band_classes[0]] == "ERR%")):                          #...or the first band is invalid for a tolerance band:
+            bAmbiguousReadDirection = False                                                 #Reading direction is no longer ambiguous       (only the conditions for non-inverted are true)
+            
+        if ((np.any(band_classes[0:2] > 9))                                             #If either of the first two bands are metallic (10-11)...
+            or (tolerance_lookup[band_classes[4]] == "ERR%")):                          #...or the last band is invalid for a tolerance band:
+            
+            if (bAmbiguousReadDirection == True):                                           #If reading direction is ambiguous:
+                bInvertReadDirection = True                                                     #Invert the reading direction           
+                bAmbiguousReadDirection = False                                                 #Reading direction is no longer ambiguous   (only the conditions for inverted are true)
+            
+            else:                                                                           #Otherwise if the reading direction is not ambiguous:
+                bAmbiguousReadDirection = True                                                  #Reading direction is now ambiguous         (the conditions for both directions are true))
+
+
+        if (bInvertReadDirection == False):
+            num = int(str(band_classes[0]) + str(band_classes[1]) + str(band_classes[2]))
+            mult = band_classes[3]
+            tolerance = tolerance_lookup[band_classes[4]]
+            
+            if (mult > 9): mult = 0 - (mult-9)
+            
+            resistance_num = num * (10.0 ** mult)    
+            resistance_string = func.int_to_metric_string(resistance_num)
+            
+            decoded_resistance_num.append(resistance_num)
+            decoded_resistance_string.append(resistance_string)
+            decoded_tolerance.append(tolerance)
+
+            
+        if (bInvertReadDirection == True) or (bAmbiguousReadDirection == True):
+            num = int(str(band_classes[4]) + str(band_classes[3]) + str(band_classes[2]))
+            mult = band_classes[1]
+            tolerance = tolerance_lookup[band_classes[0]]   
+            
+            if (mult > 9): mult = 0 - (mult-9)
+            
+            resistance_num = num * (10.0 ** mult)    
+            resistance_string = func.int_to_metric_string(resistance_num)
+            
+            decoded_resistance_num.append(resistance_num)
+            decoded_resistance_string.append(resistance_string)
+            decoded_tolerance.append(tolerance)
+    
+    ### 4-Band Decoding ----------------------------------------------------------------#----------------------------#
+    elif (num_bands == 4):                                                              #If 4 bands are present:                                
+        return (None, None, None, None)                                                     #IMPLEMENT 4-Band decoding here (not required for this project)
+                                                                                                                          # (no 4-band resistors to test with)
+
+
+    if (bAmbiguousReadDirection == True):
+        valid_E24 = [func.belongs_to_E24(decoded_resistance_num[0]), func.belongs_to_E24(decoded_resistance_num[1])]
+            
+        if (valid_E24[0] == True) and (valid_E24[1] == False):
+            bAmbiguousReadDirection = False
+        elif (valid_E24[0] == False) and (valid_E24[1] == True):
+            bAmbiguousReadDirection = False
+            bInvertReadDirection = True
+                
+        elif (valid_E24[0] == False) and (valid_E24[1] == False):
+            valid_E96 = [func.belongs_to_E96(decoded_resistance_num[0]), func.belongs_to_E96(decoded_resistance_num[1])]
+            
+            if (valid_E96[0] == True) and (valid_E96[1] == False):
+                bAmbiguousReadDirection = False
+            elif (valid_E96[0] == False) and (valid_E96[1] == True):
+                bAmbiguousReadDirection = False
+                bInvertReadDirection = True
+ 
+    #if (bAmbiguousReadDirection == True):
+    #    if (largest_separation_index == num_bands - 2):
+    #        bAmbiguousReadDirection = False
+    #    elif (largest_separation_index == 0):
+    #        bAmbiguousReadDirection = False
+    #        bInvertReadDirection = True
+    
+    return (decoded_resistance_string, decoded_tolerance, bInvertReadDirection, bAmbiguousReadDirection)
+
+
+#################################################################################################################################################################################################
+### Display Resistance ##########################################################################################################################################################################     
+# ╰┈➤ Outline the resistor with its bounding box, and display the decoded resistance and tolerance values to the provided image:
+
+def Display_Resistance(display_image, display_string, bounding_rect):
+    
+    box = func.Display_Bounding(display_image, bounding_rect, (0,0,255), 10)            #Draw bounding box on mask                     
+
+    # Sort the box points by their y-coordinate in ascending order
+    sorted_box = sorted(box, key=lambda point: point[1])
+
+    # The two upper-most points are the first two points in the sorted list
+    display_pointA = tuple(sorted_box[0])
+    display_pointB = tuple(sorted_box[1])
+    
+    textsize = cv2.getTextSize(display_string, cv2.FONT_HERSHEY_SIMPLEX, fontScale=2.5, thickness=8)[0]
+
+    display_x = int((display_pointA[0] + display_pointB[0])/2) - int(textsize[0]/2)
+    display_y = display_pointA[1] - 20
+    display_point = (display_x, display_y)
+                    
+    cv2.putText(display_image, display_string, display_point, cv2.FONT_HERSHEY_SIMPLEX, fontScale=2.5, color=(0, 0, 200), thickness=8, lineType=cv2.LINE_AA)  
+    
+    return display_image
+
 
 
 def Export_Bands_For_Training(extracted_bands, target_shape, target_dest, img_index):
@@ -485,57 +628,3 @@ def Export_Bands_For_Training(extracted_bands, target_shape, target_dest, img_in
             print("Exporting band: " + 'data_training/' + target_dest + '/' + str(img_index) + '_' + str(i) + '_' + str(j) + '.jpg')
     ################################################)
    
-def Classify_Band_Colours_CNN(extracted_bands, CNN):
-    extracted_bands_classes = []
-    test = 0    
-    for bands in extracted_bands:
-        band_classes = []
-        for band in bands:
-            band_RGB = cv2.cvtColor(band, cv2.COLOR_BGR2RGB)    # CNN is trained using RGB images
-            band_RGB = band_RGB / 255.0                         # CNN is trained using images with pixel values between 0 and 1
-            band_RGB = band_RGB.reshape(1, 30, 12, 3)                   # CNN expects batch size, height, width, channels
-            band_predictions = CNN.predict(band_RGB, verbose=0)                # Use the CNN model to predict the class of the band
-            band_class = np.argmax(band_predictions)            # Classify as the class with the highest probability
-            band_classes.append(band_class)
-        extracted_bands_classes.append(band_classes)
-        print(band_classes)
-    return extracted_bands_classes
-
-def DecodeResistance(extracted_bands_classes, tolerance_lookup):
-    decoded_resistance_num = []
-    decoded_resistance_string = []
-    decoded_tolerance = []
-    for band_classes in extracted_bands_classes:
-        if (len(band_classes) != 5): continue
-    
-        band_classes = np.array(band_classes)
-    
-        bInvertReadDirection = False
-        if ((band_classes[0] == 0)
-         or (np.any(band_classes[0:3] > 9))
-         or (tolerance_lookup[band_classes[4]] == "ERR%")):
-            bInvertReadDirection = True
-    
-        resistance_num = -1.0
-        num = -1.0
-        tolerance = "ERR%"
-        if (bInvertReadDirection == False):
-            num = int(str(band_classes[0]) + str(band_classes[1]) + str(band_classes[2]))
-            mult = band_classes[3]
-            tolerance = tolerance_lookup[band_classes[4]]
-        elif (bInvertReadDirection == True):
-            num = int(str(band_classes[4]) + str(band_classes[3]) + str(band_classes[2]))
-            mult = band_classes[1]
-            tolerance = tolerance_lookup[band_classes[0]]   
-        if (mult > 9): mult = 0 - (mult-9)
-        resistance_num = num * (10.0 ** mult)
-    
-        resistance_string = "ERR"
-        resistance_string = func.int_to_metric_string(resistance_num)
-    
-        decoded_resistance_num.append(resistance_num)
-        decoded_resistance_string.append(resistance_string)
-        decoded_tolerance.append(tolerance)
-    
-        print(resistance_string + '\u03A9')
-    cv2.waitKey(0) 

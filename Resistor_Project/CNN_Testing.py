@@ -3,6 +3,8 @@ import numpy as np # matrix manipulations
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
+import Functions as func
+
 ###########################################################
 ### Initialisation
 
@@ -10,7 +12,7 @@ colour_lookup =    ["Black", "Brown", "Red" , "Orange", "Yellow", "Green", "Blue
 
 training_data_dir = 'data_training/testing/' # Root directory of the training data
 
-# Load the trained CNN model
+# Load the trained CNN model q
 Colour_Classification_CNN = load_model('models/Colour_Classification_CNN.keras')
 
 # Set up the data generator for testing dataset
@@ -25,13 +27,12 @@ test_set = test_datagen.flow_from_directory(
     shuffle=False
 )
 
-
 ###########################################################
 ### Model Validation
 
 loss, accuracy = Colour_Classification_CNN.evaluate(test_set)
-print('FINAL Validation loss:', loss)
-print('FINAL Validation accuracy:', accuracy)
+print('Test Set loss:', loss)
+print('Test Set accuracy:', accuracy)
 
 ###########################################################
 
