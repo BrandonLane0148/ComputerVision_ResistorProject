@@ -1,7 +1,5 @@
-﻿from itertools import filterfalse
-import cv2 #opencv itself
-import numpy as np # matrix manipulations
-from tensorflow.keras.models import load_model
+﻿import cv2
+import numpy as np
 
 import Functions as func
 
@@ -31,16 +29,17 @@ def Input_Image_Preprocessing(input_image, max_input_res):
 ### Resistor Segmentation #######################################################################################################################################################################
 # ╰┈➤ Isolate the resistors from the background:
 
-def Resistor_Segmentation(filtered_input_image):
+def Resistor_Segmentation(filtered_input_image, gamma_correction=3, threshold_factor=1.0):
 
     ### Gamma Correct --------------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Increase gamma to drown out background saturation:
-    image_gamma_correct =  func.applyGammaCorrection(filtered_input_image, 3) #consider opposite for dark background?
+    image_gamma_correct =  func.applyGammaCorrection(filtered_input_image, gamma_correction) #consider opposite for dark background?
 
     ### OTSU Threshold -------------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Automatic threshold on HSV 'S' Channel to isolate coloured (saturated) resistor body from background:
     image_HSV = cv2.cvtColor(image_gamma_correct, cv2.COLOR_BGR2HSV)
     otsu_threshold, mask_OTSU = cv2.threshold(image_HSV[:, :, 1], 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU,)
+    if (threshold_factor != 1.0): _, mask_OTSU = cv2.threshold(image_HSV[:, :, 1], int(otsu_threshold * threshold_factor), 255, cv2.THRESH_BINARY)
 
     ### Mask Erosion ---------------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Erode Mask to remove wires and noise:
@@ -109,7 +108,7 @@ def Resistor_Extraction(segmentation_mask, preprocessed_input_image, min_resisto
         extracted_resistors.append(resistor)                                        #Append resistor to return array
     
 
-    return (extracted_masks, extracted_resistors, bounding_rects)
+    return (extracted_masks, extracted_resistors, mask_boundings, bounding_rects)
 
 
 
@@ -150,8 +149,8 @@ def Refine_Resistor_Mask(mask):
     dilation_kernel_down = np.roll(dilation_kernel_up, 2, axis=0)               #Flip the upper half kernel to create lower half kernel
 
     dilated = mask.copy()
-    dilated[0:mid_h, :] = cv2.dilate(mask[0:mid_h, :], dilation_kernel_up, iterations = 10)
-    dilated[mid_h:h-1, :] = cv2.dilate(mask[mid_h:h-1, :], dilation_kernel_down, iterations = 10)
+    dilated[0:mid_h, :] = cv2.dilate(mask[0:mid_h, :], dilation_kernel_up, iterations = 6)
+    dilated[mid_h:h-1, :] = cv2.dilate(mask[mid_h:h-1, :], dilation_kernel_down, iterations = 6)
 
     ### Mask Erosion -----------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Erode mask to remove noise and shave off any excess expansion from dilation:
@@ -160,15 +159,15 @@ def Refine_Resistor_Mask(mask):
     erosion_kernel_flat = np.ones((1, 2 * erosion_dist + 1))
 
     eroded = cv2.erode(dilated, erosion_kernel, iterations = 2)
-    eroded = cv2.erode(eroded, erosion_kernel_flat, iterations = 10)
+    eroded = cv2.erode(eroded, erosion_kernel_flat, iterations = 6)
     #eroded = cv2.erode(eroded, erosion_kernel, iterations = 4)
  
     ### Mask Closing -----------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Close mask to fill any remaining gaps. Unlike the dilation, this only targets holes, not missing slices:
-    closing_dist = 3
+    closing_dist = 4
     closing_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * closing_dist + 1, 2 * closing_dist + 1))
 
-    closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, closing_kernel, iterations = 2)
+    closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, closing_kernel, iterations = 3)
     
 
     return closed
@@ -201,7 +200,7 @@ def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
             y2 = h-i-1
         if (y1 != -1 and y2 != -1):                                                 #If both y1 and y2 set, break loop
             continue
-    if (y1 == -1 or y2 == -1): return None                                      #If either y1 or y2 not set, assume invalid resistor extraction and return None
+    if (y1 == -1 or y2 == -1): return (None, None)                                  #If either y1 or y2 not set, assume invalid resistor extraction and return None
     
     h_reduce = 0.4                                                              #Reduce vertical bounds by selected factor (40%) for safety margin and to avoid shadows
     h_inner = y2 - y1
@@ -210,7 +209,7 @@ def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
         y2 = int(y2 - ((h_inner * h_reduce)/2))
         h_inner = y2 - y1
         
-    if (h_inner < 14): return None                                              #If vertical bounds are too small, assume invalid resistor extraction and return None
+    if (h_inner < 14): return (None, None)                                      #If vertical bounds are too small, assume invalid resistor extraction and return None
     
     ### Horizontal Bounds ------------------------------------------------------#----------------------------#
     x1, x2 = -1, -1                                                         
@@ -221,7 +220,7 @@ def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
             x2 = w-i-1
         if (x1 != -1 and x2 != -1):                                                 #If both x1 and x2 set, break loop
             continue
-    if (x1 == -1 or x2 == -1): return None                                      #If either x1 or x2 not set, assume invalid resistor extraction and return None
+    if (x1 == -1 or x2 == -1): return (None, None)                              #If either x1 or x2 not set, assume invalid resistor extraction and return None
     
     w_reduce = 0.0                                                              #Reduce horizontal bounds by selected factor (0%) for safety margin and to avoid shadows
     w_inner = x2 - x1
@@ -232,7 +231,7 @@ def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
     
     inner_resistor = resistor[y1:y2, x1:x2]                                     #Extract inner resistor using calculated bounds
     
-    return inner_resistor
+    return (inner_resistor, x1)
   
 
 
@@ -411,7 +410,8 @@ def Band_Extraction(mask, inner_resistor, bodycolour_abs_diff, target_band_shape
             else: 
                 print("... Band not located - Continuity too low: {:.3f}".format(continuity))
                     
-                if (len(bands_info) < 5) and (continuity >= 0.2):                       #Otherwise, if there are still less than 5 bands, give more leeway to insert a new band
+                if (((len(bands_info) < 5) and (continuity >= 0.2))                     #Otherwise, if there are still less than 5 bands, give more leeway to insert a new band
+                 or ((len(bands_info) == 5) and (bands_info[0][0] == 0 or bands_info[-1][1] == w) and (continuity >= 0.4))):
                     x0 = xm - int(target_band_width/2)                                      
                     x1 = xm + int(target_band_width/2)                                      #Insert a band directly in the middle of the largest separation (rather than at search location)
                     bands_info.insert(largest_separation_index+1, [x0, x1, target_band_width])
@@ -435,6 +435,8 @@ def Band_Extraction(mask, inner_resistor, bodycolour_abs_diff, target_band_shape
                 else: 
                     print("... Band not located - Continuity too low: {:.3f}".format(continuity))
                             
+    if (len(bands_info) <= 3): return (None, None, None)                        #If there are still only 3 bands even after extrapolation, assume invalid extraction and return None               
+                    
     ### Remove False Positives -------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ If the extrapolation or extraction process has resulted in more than 5 bands, remove assumed false positives  
                     
@@ -508,60 +510,73 @@ def Decode_Resistance(band_classes, largest_separation_index, tolerance_lookup):
     bInvertReadDirection = False                                                        #Assume left to right reading direction
     bAmbiguousReadDirection = True                                                      #Assume reading direction is ambiguous   
         
-    ### 5-Band Decoding ----------------------------------------------------------------#----------------------------#
+    ### 5-Band Decoding --------------------------------------------------------------------------------------------------------------------------------------------------
+    # ╰┈➤ Handle the decoding of 5-band resistors. Consider reading direction inversion and ambiguity:
+    
     if (num_bands == 5):                                                                #If 5 bands are present:                                    
    
-        if ((np.any(band_classes[3:5] > 9))                                             #If either of the last two bands are metallic (10-11)...
-            or (tolerance_lookup[band_classes[0]] == "ERR%")):                          #...or the first band is invalid for a tolerance band:
-            bAmbiguousReadDirection = False                                                 #Reading direction is no longer ambiguous       (only the conditions for non-inverted are true)
+        if ((np.any(band_classes[3:5] > 9))                                                 #If either of the last two bands are metallic (10-11)...
+            or (tolerance_lookup[band_classes[0]] == "ERR%")):                              #...or the first band is invalid for a tolerance band:
+            bAmbiguousReadDirection = False                                                     #Reading direction is no longer ambiguous       (only the conditions for non-inverted are true)
             
-        if ((np.any(band_classes[0:2] > 9))                                             #If either of the first two bands are metallic (10-11)...
-            or (tolerance_lookup[band_classes[4]] == "ERR%")):                          #...or the last band is invalid for a tolerance band:
+        if ((np.any(band_classes[0:2] > 9))                                                 #If either of the first two bands are metallic (10-11)...
+            or (tolerance_lookup[band_classes[4]] == "ERR%")):                              #...or the last band is invalid for a tolerance band:
             
-            if (bAmbiguousReadDirection == True):                                           #If reading direction is ambiguous:
-                bInvertReadDirection = True                                                     #Invert the reading direction           
-                bAmbiguousReadDirection = False                                                 #Reading direction is no longer ambiguous   (only the conditions for inverted are true)
+            if (bAmbiguousReadDirection == True):                                               #If reading direction is ambiguous:
+                bInvertReadDirection = True                                                         #Invert the reading direction           
+                bAmbiguousReadDirection = False                                                     #Reading direction is no longer ambiguous   (only the conditions for inverted are true)
             
-            else:                                                                           #Otherwise if the reading direction is not ambiguous:
-                bAmbiguousReadDirection = True                                                  #Reading direction is now ambiguous         (the conditions for both directions are true))
+            else:                                                                               #Otherwise if the reading direction is not ambiguous:
+                bAmbiguousReadDirection = True                                                      #Reading direction is now ambiguous         (the conditions for both directions are true))
 
-
-        if (bInvertReadDirection == False):
-            num = int(str(band_classes[0]) + str(band_classes[1]) + str(band_classes[2]))
-            mult = band_classes[3]
-            tolerance = tolerance_lookup[band_classes[4]]
+        
+        ### Forward Reading Direction ------------------------------------------------------#----------------------------#
+        if (bInvertReadDirection == False):                                                 #If reading direction is left to right:
+            num = int(str(band_classes[0]) + str(band_classes[1]) + str(band_classes[2]))       #Concatenate the first three bands
+            mult = band_classes[3]                                                              #Extract the multiplier band
+            tolerance = tolerance_lookup[band_classes[4]]                                       #Extract the tolerance band
             
-            if (mult > 9): mult = 0 - (mult-9)
+            if (mult > 9): mult = 0 - (mult-9)                                                  #If multiplier is metallic, convert to negative exponent
             
-            resistance_num = num * (10.0 ** mult)    
-            resistance_string = func.int_to_metric_string(resistance_num)
+            resistance_num = num * (10.0 ** mult)                                               #Calculate the resistance value
+            resistance_string = func.int_to_metric_string(resistance_num)                       #Convert the resistance value to a metric string
             
-            decoded_resistance_num.append(resistance_num)
+            decoded_resistance_num.append(resistance_num)                                       #Append results to return array
             decoded_resistance_string.append(resistance_string)
             decoded_tolerance.append(tolerance)
 
+        ### Inverted Reading Direction -----------------------------------------------------#----------------------------#    
+        if (bInvertReadDirection == True) or (bAmbiguousReadDirection == True):             #If reading direction is right to left, or ambiguous (need to do both in this case):
+            num = int(str(band_classes[4]) + str(band_classes[3]) + str(band_classes[2]))       #Concatenate the last three bands
+            mult = band_classes[1]                                                              #Extract the multiplier band
+            tolerance = tolerance_lookup[band_classes[0]]                                       #Extract the tolerance band
             
-        if (bInvertReadDirection == True) or (bAmbiguousReadDirection == True):
-            num = int(str(band_classes[4]) + str(band_classes[3]) + str(band_classes[2]))
-            mult = band_classes[1]
-            tolerance = tolerance_lookup[band_classes[0]]   
+            if (mult > 9): mult = 0 - (mult-9)                                                  #If multiplier is metallic, convert to negative exponent
             
-            if (mult > 9): mult = 0 - (mult-9)
+            resistance_num = num * (10.0 ** mult)                                               #Calculate the resistance value     
+            resistance_string = func.int_to_metric_string(resistance_num)                       #Convert the resistance value to a metric string
             
-            resistance_num = num * (10.0 ** mult)    
-            resistance_string = func.int_to_metric_string(resistance_num)
-            
-            decoded_resistance_num.append(resistance_num)
+            decoded_resistance_num.append(resistance_num)                                       #Append results to return array
             decoded_resistance_string.append(resistance_string)
             decoded_tolerance.append(tolerance)
     
-    ### 4-Band Decoding ----------------------------------------------------------------#----------------------------#
+    ### 4-Band Decoding --------------------------------------------------------------------------------------------------------------------------------------------------
+    # ╰┈➤ Handle the decoding of 4-band resistors here. [Not currently implemented]
     elif (num_bands == 4):                                                              #If 4 bands are present:                                
         return (None, None, None, None)                                                     #IMPLEMENT 4-Band decoding here (not required for this project)
                                                                                                                           # (no 4-band resistors to test with)
+    
+    ### Final Ambiguity Tests --------------------------------------------------------------------------------------------------------------------------------------------
+    # ╰┈➤ Check for any remaining ambiguity in the reading direction and resolve if possible:
+    
+    if (bAmbiguousReadDirection == True):                                               #Attempt to resolve ambiguity by handling the case of symmetric resistor bands:
+        if (decoded_resistance_num[0] == decoded_resistance_num[1]) and (decoded_tolerance[0] == decoded_tolerance[1]):
+            bAmbiguousReadDirection = False                 
+            decoded_resistance_num.pop(1)
+            decoded_resistance_string.pop(1)
+            decoded_tolerance.pop(1)
 
-
-    if (bAmbiguousReadDirection == True):
+    if (bAmbiguousReadDirection == True):                                               #Attempt to resolve ambiguity by checking E24 and E96 series
         valid_E24 = [func.belongs_to_E24(decoded_resistance_num[0]), func.belongs_to_E24(decoded_resistance_num[1])]
             
         if (valid_E24[0] == True) and (valid_E24[1] == False):
@@ -579,7 +594,7 @@ def Decode_Resistance(band_classes, largest_separation_index, tolerance_lookup):
                 bAmbiguousReadDirection = False
                 bInvertReadDirection = True
  
-    #if (bAmbiguousReadDirection == True):
+    #if (bAmbiguousReadDirection == True):                                              #Attempt to resolve ambiguity by checking largest band seperation location (NOT EFFECTIVE)
     #    if (largest_separation_index == num_bands - 2):
     #        bAmbiguousReadDirection = False
     #    elif (largest_separation_index == 0):
@@ -611,6 +626,8 @@ def Display_Resistance(display_image, display_string, bounding_rect):
     display_point = (display_x, display_y)
                     
     cv2.putText(display_image, display_string, display_point, cv2.FONT_HERSHEY_SIMPLEX, fontScale=2.5, color=(0, 0, 200), thickness=8, lineType=cv2.LINE_AA)  
+
+    #display_image = func.PIL_writeText(display_image, display_string, (50, 50), colour=(200,0,0), fontsize=30)
     
     return display_image
 
