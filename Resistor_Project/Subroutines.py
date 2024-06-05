@@ -167,7 +167,7 @@ def Refine_Resistor_Mask(mask):
     closing_dist = 4
     closing_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * closing_dist + 1, 2 * closing_dist + 1))
 
-    closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, closing_kernel, iterations = 3)
+    closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, closing_kernel, iterations = 2)
     
 
     return closed
@@ -433,9 +433,7 @@ def Band_Extraction(mask, inner_resistor, bodycolour_abs_diff, target_band_shape
                     k = 1                                                                       #Increment k to account for the inserted band in the next iteration
                     print("... Band located with continuity: {:.3f} -> Inserting band at: {}".format(continuity, missing_band[0]+int(missing_band[2]/2)))
                 else: 
-                    print("... Band not located - Continuity too low: {:.3f}".format(continuity))
-                            
-    if (len(bands_info) <= 3): return (None, None, None)                        #If there are still only 3 bands even after extrapolation, assume invalid extraction and return None               
+                    print("... Band not located - Continuity too low: {:.3f}".format(continuity))               
                     
     ### Remove False Positives -------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ If the extrapolation or extraction process has resulted in more than 5 bands, remove assumed false positives  
@@ -509,7 +507,7 @@ def Decode_Resistance(band_classes, largest_separation_index, tolerance_lookup):
     
     bInvertReadDirection = False                                                        #Assume left to right reading direction
     bAmbiguousReadDirection = True                                                      #Assume reading direction is ambiguous   
-        
+
     ### 5-Band Decoding --------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Handle the decoding of 5-band resistors. Consider reading direction inversion and ambiguity:
     
@@ -565,9 +563,25 @@ def Decode_Resistance(band_classes, largest_separation_index, tolerance_lookup):
     elif (num_bands == 4):                                                              #If 4 bands are present:                                
         return (None, None, None, None)                                                     #IMPLEMENT 4-Band decoding here (not required for this project)
                                                                                                                           # (no 4-band resistors to test with)
+    ### Reject Other Band Quantities -------------------------------------------------------------------------------------------------------------------------------------
+    # ╰┈➤ Handle the decoding of 4-band resistors here. [Not currently implemented]
+    else:                                                                               #If anything other than 4 or 5 bands are present:                                
+        return (None, None, None, None)  
     
     ### Final Ambiguity Tests --------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Check for any remaining ambiguity in the reading direction and resolve if possible:
+    
+    if (bAmbiguousReadDirection == True):                                               #Attempt to resolve ambiguity by checking if either deocded resistance is 0:
+        if (decoded_resistance_num[0] == 0):
+            bAmbiguousReadDirection = False
+            decoded_resistance_num.pop(0)
+            decoded_resistance_string.pop(0)
+            decoded_tolerance.pop(0)
+        elif (decoded_resistance_num[1] == 0):
+            bAmbiguousReadDirection = False
+            decoded_resistance_num.pop(1)
+            decoded_resistance_string.pop(1)
+            decoded_tolerance.pop(1)
     
     if (bAmbiguousReadDirection == True):                                               #Attempt to resolve ambiguity by handling the case of symmetric resistor bands:
         if (decoded_resistance_num[0] == decoded_resistance_num[1]) and (decoded_tolerance[0] == decoded_tolerance[1]):
@@ -593,6 +607,13 @@ def Decode_Resistance(band_classes, largest_separation_index, tolerance_lookup):
             elif (valid_E96[0] == False) and (valid_E96[1] == True):
                 bAmbiguousReadDirection = False
                 bInvertReadDirection = True
+    
+    if (bAmbiguousReadDirection == True):                                               #Attempt to resolve ambiguity by checking if either end band is brown (more likely to be tolerance band)
+        if (band_classes[-1] == 1) and (band_classes[0] != 1):
+            bAmbiguousReadDirection = False
+        elif (band_classes[0] == 1) and (band_classes[-1] != 1):
+            bAmbiguousReadDirection = False
+            bInvertReadDirection = True
  
     #if (bAmbiguousReadDirection == True):                                              #Attempt to resolve ambiguity by checking largest band seperation location (NOT EFFECTIVE)
     #    if (largest_separation_index == num_bands - 2):
@@ -600,6 +621,9 @@ def Decode_Resistance(band_classes, largest_separation_index, tolerance_lookup):
     #    elif (largest_separation_index == 0):
     #        bAmbiguousReadDirection = False
     #        bInvertReadDirection = True
+    
+    if (bAmbiguousReadDirection == True):                                               #If still ambiguous, choose lower value as display one
+        if (decoded_resistance_num[0] > decoded_resistance_num[1]): bInvertReadDirection = True
     
     return (decoded_resistance_string, decoded_tolerance, bInvertReadDirection, bAmbiguousReadDirection)
 
@@ -633,15 +657,14 @@ def Display_Resistance(display_image, display_string, bounding_rect):
 
 
 
-def Export_Bands_For_Training(extracted_bands, target_shape, target_dest, img_index):
+def Export_Bands_For_Training(extracted_bands, target_shape, target_dest, img_index, object_index):
     
     ################################################
     # Export the bands for training
     for i in range(len(extracted_bands)):
-        for j in range(len(extracted_bands[i])):
-            band = extracted_bands[i][j]
-            band_resize = cv2.resize(band, target_shape)
-            cv2.imwrite('data_training/' + target_dest + '/' + str(img_index) + '_' + str(i) + '_' + str(j) + '.jpg', band_resize)
-            print("Exporting band: " + 'data_training/' + target_dest + '/' + str(img_index) + '_' + str(i) + '_' + str(j) + '.jpg')
+        band = extracted_bands[i]
+        band_resize = cv2.resize(band, target_shape)
+        cv2.imwrite('data_training/' + target_dest + '/' + str(img_index) + '_' + str(object_index) + '_' + str(i) + '.jpg', band_resize)
+        print("Exporting band: " + 'data_training/' + target_dest + '/' + str(img_index) + '_' + str(object_index) + '_' + str(i) + '.jpg')
     ################################################)
    

@@ -15,7 +15,13 @@ colour_lookup =     ["Black"   , "Brown"    , "Red"      , "Orange"    , "Yellow
 tolerance_lookup =  ["ERR%"    , "1%"       , "2%"       , "ERR%"      , "ERR%"      , "0.5%"     , "0.25%"    , "0.1%"      , "0.05%"      , "ERR%"       , "5%"        , "10%"        ]
 colour_BGR_lookup = [(60,40,40), (65,70,110), (50,40,130), (40,100,180), (70,170,170), (50,100,20), (150,60,10), (150,60,100), (130,135,135), (240,230,220), (80,170,220), (195,190,195)]
 
-num_input_images = 44
+
+dir_generic = 'data/'
+dir_stress = 'data/stress/'
+current_dir = dir_generic
+
+num_input_images = 47
+num_input_images_stress = 6
 
 max_input_res = [2560, 2560]
 max_display_res = [1440, 2560]
@@ -29,17 +35,26 @@ bExportBandsForTraining = False
 # Load the trained CNN model
 Colour_Classification_CNN = load_model('models/Colour_Classification_CNN.keras')
 
+
 #################################################################################################################################################################################################
 ### Main Program Loop ###########################################################################################################################################################################     
 # ╰┈➤ Loop through all input images, and perform the resistor decoding process:
 
-input_index = 12
+input_index = 0
+input_index_old = 0
+bUseCustomImage = False
 
 while (True):
     
     ### Load Input Image -------------------------------------------------------------------------------------------------------------------------------------------------
-    input_image = cv2.imread('data/'+str(input_index)+'.jpg')
-    print("Image Index: {}".format(input_index))
+    
+    if (bUseCustomImage):
+        input_image = cv2.imread('data/import.jpg')
+        print("Using Custom Image")
+        bUseCustomImage = False
+    else:
+        input_image = cv2.imread(current_dir+str(input_index)+'.jpg')
+        print("Image Index: {}".format(input_index))
 
     ### Preprocess Input Image -------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Preprocess the input image to resize and filter out noise:
@@ -47,7 +62,7 @@ while (True):
 
     func.displayImage("Resistor Decoder", preprocessed_input_image, max_display_res)
     
-    ### Wait for User Input -----------------------------------------------------------------------------------------------------------------------------------------------
+    ### Process User Input -----------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Wait for user input to change image, quit, or continue with current image:
     
     status_message = ""
@@ -55,17 +70,48 @@ while (True):
     bQuit = False
     while (True):
         key = cv2.waitKey(1) & 0xFF
-        if key == ord('.'):  # Right arrow key
-            input_index += 1
-            if (input_index > num_input_images): input_index = 0
+        if key == ord('.'):                                                 #If the right arrow key is pressed:
+            input_index += 1                                                    #Increment the input index
+            if (current_dir == dir_generic) and (input_index > num_input_images): input_index = 0
+            elif (current_dir == dir_stress) and (input_index > num_input_images_stress): input_index = 0
             bSkip = True
-            status_message = "Skipping to next image..."
+            status_message = "Skipping to next image [{}]...".format(input_index)
             break
-        elif key == ord(','):  # Left arrow key
-            input_index -= 1
-            if (input_index < 0): input_index = num_input_images
+        elif key == ord(','):                                               #If the left arrow key is pressed:
+            input_index -= 1                                                    #Decrement the input index
+            if (input_index < 0): 
+                if (current_dir == dir_generic): input_index = num_input_images
+                elif (current_dir == dir_stress): input_index = num_input_images_stress
             bSkip = True
-            status_message = "Skipping to previous image..."
+            status_message = "Skipping to previous image [{}]...".format(input_index)
+            break
+        elif key == ord('i'):                                               #If the 'i' key is pressed:
+            bUseCustomImage = True                                              #Set the custom image flag to True
+            status_message = "Importing custom image..."
+            bSkip = True
+            break
+        elif key == ord('t'):                                               #If the 't' key is pressed:
+            if (current_dir == dir_generic):                                    #Swap test set
+                current_dir = dir_stress
+                status_message = "Switching to stress test images..."
+            elif (current_dir == dir_stress): 
+                current_dir = dir_generic
+                status_message = "Switching to generic test images..."
+            input_index, input_index_old = input_index_old, input_index
+            bSkip = True
+            break
+        elif key == ord('r'):                                               #If the 'r' key is pressed:
+            if (current_dir == dir_generic):                                    #Select random input image
+                input_index = np.random.randint(0, num_input_images)
+            elif (current_dir == dir_stress): 
+                input_index = np.random.randint(0, num_input_images_stress)
+            status_message = "Selecting random image [{}]...".format(input_index)
+            bSkip = True
+            break
+        elif key == ord('0'):                                               #If the '0' key is pressed:
+            input_index = 0                                                     #Set the input index to 0
+            status_message = "Selecting first image [{}]...".format(input_index)
+            bSkip = True
             break
         elif key == 27:  # Esc key
             bQuit = True
@@ -107,6 +153,7 @@ while (True):
         bounding_rect = bounding_rects[i]
         
         object_details_log = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        preview_objectID = func.Construct_ObjectID_Preview(i, target_resistor_width)
         
         ### Re-evaluate Resistor Mask ------------------------------------------------------------------------------------------------------------------------------------
         # ╰┈➤ Perform resistor segmentation again within the confined bounding rectangle to allow more effective OTSU thresholding:
@@ -128,6 +175,7 @@ while (True):
     
         if (inner_resistor is None):                                                            #If the inner resistor extraction failed:
             func.Display_Bounding(output_image, bounding_rect, (60,0,0), 4)                         #Display bounding as incomplete colour (stage 1)
+            object_details_log = func.Append_To_Object_Log(preview_objectID, object_details_log, bool_upwards=True)
             object_details.append(object_details_log)                                               #Append the object details log to the object details list
             continue                                                                                #Skip to the next object
         
@@ -148,13 +196,13 @@ while (True):
     
         if (extracted_bands is None):                                                         #If band extraction failed:  
             func.Display_Bounding(output_image, bounding_rect, (140,0,0), 4)                        #Display bounding as incomplete colour (stage 2)
+            object_details_log = func.Append_To_Object_Log(preview_objectID, object_details_log, bool_upwards=True)
             object_details.append(object_details_log)                                               #Append the object details log to the object details list
             continue                                                                                #Skip to the next object
         
         if (bExportBandsForTraining):
             print("\n\n")
-            sub.Export_Bands_For_Training(extracted_bands, target_band_shape, "training", input_index, object_index=i)
-            continue
+            sub.Export_Bands_For_Training(extracted_bands, target_band_shape, "testing", input_index, object_index=i)
         
         object_details_log = func.Append_To_Object_Log(bands_preview, object_details_log, offset, padding=20)
         
@@ -178,6 +226,7 @@ while (True):
     
         if (decoded_resistance_string is None):                                             #If resistance decoding failed:
             func.Display_Bounding(output_image, bounding_rect, (230,0,0), 4)                    #Display bounding as incomplete colour (stage 3)
+            object_details_log = func.Append_To_Object_Log(preview_objectID, object_details_log, bool_upwards=True)
             object_details.append(object_details_log)                                           #Append the object details log to the object details list
             continue                                                                            #Skip to the next object
     
@@ -196,28 +245,37 @@ while (True):
             else: display_string = "{} ~{}".format(decoded_resistance_string[1], decoded_tolerance[1])
             preview_inverted_resistance = func.Construct_Inverted_Resistance_Preview(display_string, bAmbiguousReadDirection, target_resistor_width)
             object_details_log = func.Append_To_Object_Log(preview_inverted_resistance, object_details_log, padding=5, bool_upwards=True)
-
-        object_details.append(object_details_log)  
+            
+        object_details_log = func.Append_To_Object_Log(preview_objectID, object_details_log, bool_upwards=True)
+        object_details.append(object_details_log)
+        
+        status = output_image.copy()
+        cv2.putText(status, status_message, (35, 75), cv2.FONT_HERSHEY_SIMPLEX, fontScale=2.5, color=(0, 0, 255), thickness=8, lineType=cv2.LINE_AA)
+        func.displayImage("Resistor Decoder", status, max_display_res)
+        cv2.waitKey(1)  # Force window update
         
     #############################################################################################################################################################################################
     ### Display Output ##########################################################################################################################################################################
    
     func.displayImage("Resistor Decoder", output_image, max_display_res)
     
-    ### Wait for User Input -----------------------------------------------------------------------------------------------------------------------------------------------
+    ### Process User Input -----------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Wait for user input to change image or quit:
     bDisplaySegmentation = False
     while (True):
         key = cv2.waitKey(1) & 0xFF
         if key == ord('.'):                                                 #If the right arrow key is pressed:
             input_index += 1                                                    #Increment the input index
-            if (input_index > num_input_images): input_index = 0
-            status_message = "Changing to next image..."
+            if (current_dir == dir_generic) and (input_index > num_input_images): input_index = 0
+            elif (current_dir == dir_stress) and (input_index > num_input_images_stress): input_index = 0
+            status_message = "Changing to next image [{}]...".format(input_index)
             break
         elif key == ord(','):                                               #If the left arrow key is pressed:
             input_index -= 1                                                    #Decrement the input index
-            if (input_index < 0): input_index = num_input_images
-            status_message = "Changing to previous image..."
+            if (input_index < 0): 
+                if (current_dir == dir_generic): input_index = num_input_images
+                elif (current_dir == dir_stress): input_index = num_input_images_stress
+            status_message = "Changing to previous image [{}]...".format(input_index)
             break
         elif key == ord('s'):                                               #If the 's' key is pressed:                        
             if (bDisplaySegmentation == False):                                 #Display the segmentation mask if it's not already displayed
@@ -226,6 +284,30 @@ while (True):
             else:
                 bDisplaySegmentation = False                                    #Otherwise revert to the original output image if it is
                 func.displayImage("Resistor Decoder", output_image, max_display_res)
+        elif key == ord('i'):                                               #If the 'i' key is pressed:
+            bUseCustomImage = True                                              #Set the custom image flag to True
+            status_message = "Importing custom image..."
+            break
+        elif key == ord('t'):                                               #If the 't' key is pressed:
+            if (current_dir == dir_generic):                                    #Swap test set
+                current_dir = dir_stress
+                status_message = "Switching to stress test images..."
+            elif (current_dir == dir_stress): 
+                current_dir = dir_generic
+                status_message = "Switching to generic test images..."
+            input_index, input_index_old = input_index_old, input_index
+            break
+        elif key == ord('r'):                                               #If the 'r' key is pressed:
+            if (current_dir == dir_generic):                                    #Select random input image
+                input_index = np.random.randint(0, num_input_images)
+            elif (current_dir == dir_stress): 
+                input_index = np.random.randint(0, num_input_images_stress)
+            status_message = "Selecting random image [{}]...".format(input_index)
+            break
+        elif key == ord('0'):                                               #If the '0' key is pressed:
+            input_index = 0                                                     #Set the input index to 0
+            status_message = "Selecting first image [{}]...".format(input_index)
+            break
         elif key == 27:                                                     #If the escape key is pressed:
             bQuit = True                                                        #Set the quit flag to True
             status_message = "Quitting..."

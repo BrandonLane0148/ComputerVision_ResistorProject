@@ -378,3 +378,19 @@ def Construct_Inverted_Resistance_Preview(inverted_resistance_string, bAmbiguous
 
     return preview_inverted_resistance
 
+def Construct_ObjectID_Preview(object_index, target_resistor_width):
+    preview_ID = np.zeros((50, target_resistor_width, 3), np.uint8)        
+
+    textsize = cv2.getTextSize("Object ID: ", cv2.FONT_HERSHEY_DUPLEX, fontScale=0.7, thickness=2)[0]
+    text_posX = 15
+    text_posY = 22 + int(textsize[1]/2)
+    cv2.putText(preview_ID, "Object ID: ", (text_posX, text_posY), cv2.FONT_HERSHEY_DUPLEX, fontScale=0.8, color=(210, 210, 255), thickness=1, lineType=cv2.LINE_AA)
+
+    textsize = cv2.getTextSize(str(object_index), cv2.FONT_HERSHEY_DUPLEX, fontScale=0.7, thickness=2)[0]
+    text_posX = target_resistor_width - textsize[0] - 40
+    text_posY = 22 + int(textsize[1]/2)
+    cv2.putText(preview_ID, str(object_index), (text_posX, text_posY), cv2.FONT_HERSHEY_DUPLEX, fontScale=0.8, color=(0, 0, 200), thickness=2, lineType=cv2.LINE_AA)
+    
+    preview_ID[-4:-1, :] = [255, 255, 255]
+
+    return preview_ID
