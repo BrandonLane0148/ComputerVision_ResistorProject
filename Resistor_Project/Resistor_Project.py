@@ -2,7 +2,6 @@
 import cv2 
 import numpy as np
 from tensorflow.keras.models import load_model
-import keyboard
 
 import Functions as func
 import Subroutines as sub
@@ -25,8 +24,9 @@ num_input_images_stress = 6
 
 max_input_res = [2560, 2560]
 max_display_res = [1440, 2560]
+#max_display_res = [900, 1920]
 
-min_resistor_res = 20
+min_resistor_res = 30
 target_resistor_width = 300
 target_band_shape = (12, 30)
 
@@ -85,6 +85,19 @@ while (True):
             bSkip = True
             status_message = "Skipping to previous image [{}]...".format(input_index)
             break
+        elif key == ord('r'):                                               #If the 'r' key is pressed:
+            if (current_dir == dir_generic):                                    #Select random input image
+                input_index = np.random.randint(0, num_input_images)
+            elif (current_dir == dir_stress): 
+                input_index = np.random.randint(0, num_input_images_stress)
+            status_message = "Selecting random image [{}]...".format(input_index)
+            bSkip = True
+            break
+        elif key == ord('0'):                                               #If the '0' key is pressed:
+            input_index = 0                                                     #Set the input index to 0
+            status_message = "Selecting first image [{}]...".format(input_index)
+            bSkip = True
+            break
         elif key == ord('i'):                                               #If the 'i' key is pressed:
             bUseCustomImage = True                                              #Set the custom image flag to True
             status_message = "Importing custom image..."
@@ -98,19 +111,6 @@ while (True):
                 current_dir = dir_generic
                 status_message = "Switching to generic test images..."
             input_index, input_index_old = input_index_old, input_index
-            bSkip = True
-            break
-        elif key == ord('r'):                                               #If the 'r' key is pressed:
-            if (current_dir == dir_generic):                                    #Select random input image
-                input_index = np.random.randint(0, num_input_images)
-            elif (current_dir == dir_stress): 
-                input_index = np.random.randint(0, num_input_images_stress)
-            status_message = "Selecting random image [{}]...".format(input_index)
-            bSkip = True
-            break
-        elif key == ord('0'):                                               #If the '0' key is pressed:
-            input_index = 0                                                     #Set the input index to 0
-            status_message = "Selecting first image [{}]...".format(input_index)
             bSkip = True
             break
         elif key == 27:  # Esc key
@@ -277,13 +277,17 @@ while (True):
                 elif (current_dir == dir_stress): input_index = num_input_images_stress
             status_message = "Changing to previous image [{}]...".format(input_index)
             break
-        elif key == ord('s'):                                               #If the 's' key is pressed:                        
-            if (bDisplaySegmentation == False):                                 #Display the segmentation mask if it's not already displayed
-                bDisplaySegmentation = True
-                func.displayImage("Resistor Decoder", segmentation_mask_boundings, max_display_res)
-            else:
-                bDisplaySegmentation = False                                    #Otherwise revert to the original output image if it is
-                func.displayImage("Resistor Decoder", output_image, max_display_res)
+        elif key == ord('r'):                                               #If the 'r' key is pressed:
+            if (current_dir == dir_generic):                                    #Select random input image
+                input_index = np.random.randint(0, num_input_images)
+            elif (current_dir == dir_stress): 
+                input_index = np.random.randint(0, num_input_images_stress)
+            status_message = "Selecting random image [{}]...".format(input_index)
+            break
+        elif key == ord('0'):                                               #If the '0' key is pressed:
+            input_index = 0                                                     #Set the input index to 0
+            status_message = "Selecting first image [{}]...".format(input_index)
+            break
         elif key == ord('i'):                                               #If the 'i' key is pressed:
             bUseCustomImage = True                                              #Set the custom image flag to True
             status_message = "Importing custom image..."
@@ -297,17 +301,13 @@ while (True):
                 status_message = "Switching to generic test images..."
             input_index, input_index_old = input_index_old, input_index
             break
-        elif key == ord('r'):                                               #If the 'r' key is pressed:
-            if (current_dir == dir_generic):                                    #Select random input image
-                input_index = np.random.randint(0, num_input_images)
-            elif (current_dir == dir_stress): 
-                input_index = np.random.randint(0, num_input_images_stress)
-            status_message = "Selecting random image [{}]...".format(input_index)
-            break
-        elif key == ord('0'):                                               #If the '0' key is pressed:
-            input_index = 0                                                     #Set the input index to 0
-            status_message = "Selecting first image [{}]...".format(input_index)
-            break
+        elif key == ord('s'):                                               #If the 's' key is pressed:                        
+            if (bDisplaySegmentation == False):                                 #Display the segmentation mask if it's not already displayed
+                bDisplaySegmentation = True
+                func.displayImage("Resistor Decoder", segmentation_mask_boundings, max_display_res)
+            else:
+                bDisplaySegmentation = False                                    #Otherwise revert to the original output image if it is
+                func.displayImage("Resistor Decoder", output_image, max_display_res)
         elif key == 27:                                                     #If the escape key is pressed:
             bQuit = True                                                        #Set the quit flag to True
             status_message = "Quitting..."

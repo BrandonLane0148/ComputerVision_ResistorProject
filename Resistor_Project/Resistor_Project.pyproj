@@ -22,7 +22,6 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Clipboard.py" />
     <Compile Include="CNN_Testing.py" />
     <Compile Include="CNN_Training.py" />
     <Compile Include="Functions.py" />

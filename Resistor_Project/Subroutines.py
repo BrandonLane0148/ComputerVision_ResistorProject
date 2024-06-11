@@ -11,15 +11,17 @@ def Input_Image_Preprocessing(input_image, max_input_res):
     
     ### Resize Image ---------------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Resize input image to reduce processing time and memory usage, and allow for more consistent morphological operations:
-    if (input_image.shape[0] > max_input_res[0] or input_image.shape[1] > max_input_res[1]):
-        h_scale = input_image.shape[0] / max_input_res[0]
-        w_scale = input_image.shape[1] / max_input_res[1]
+    h, w, _ = input_image.shape
+    if (h > max_input_res[0] or w > max_input_res[1]):
+        
+        h_scale = h / max_input_res[0]
+        w_scale = w / max_input_res[1]
     
         scale = max(h_scale, w_scale)
-        new_dim = [int(input_image.shape[1] / scale), int(input_image.shape[0] / scale)]
+        new_dim = [int(w / scale), int(h / scale)]
         input_image = cv2.resize(input_image, new_dim)
 
-    ### Median Filter ----------------------------------------------------------------------------------------------
+    ### Median Filter --------------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ To remove noise but preserve edges
     filtered_input_image = cv2.bilateralFilter(input_image,25,25,25)
 
@@ -52,7 +54,6 @@ def Resistor_Segmentation(filtered_input_image, gamma_correction=3, threshold_fa
     dilation_dist = 1
     dilation_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * dilation_dist + 1, 2 * dilation_dist + 1))
     mask_dilated = cv2.dilate(mask_eroded, dilation_kernel, iterations = 2)
-
 
     return mask_dilated
 
@@ -88,7 +89,7 @@ def Resistor_Extraction(segmentation_mask, preprocessed_input_image, min_resisto
         if (min(dimensions) < min_resistor_res): continue
     
         cv2.drawContours(mask_boundings,[box],0,(0,0,255),3)                        #Draw bounding box on mask
-        bounding_rects.append(rect)                                                 #Append bounding box to return array
+        bounding_rects.append(rect) 
 
     ### Resistor Extraction --------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Extract resistors using bounding boxes:
@@ -168,7 +169,6 @@ def Refine_Resistor_Mask(mask):
     closing_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * closing_dist + 1, 2 * closing_dist + 1))
 
     closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, closing_kernel, iterations = 2)
-    
 
     return closed
 
@@ -179,7 +179,7 @@ def Refine_Resistor_Mask(mask):
 # ╰┈➤ Extract the inner portion of the resistor containing the bands and body:
 
 def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
-
+    
     ### Mask Shape Extraction --------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Extract mask dimensions and midpoints:
     h, w = mask.shape
@@ -230,7 +230,7 @@ def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
         w_inner = x2 - x1
     
     inner_resistor = resistor[y1:y2, x1:x2]                                     #Extract inner resistor using calculated bounds
-    
+
     return (inner_resistor, x1)
   
 
@@ -239,7 +239,7 @@ def Inner_Resistor_Extraction(resistor, mask, target_resistor_width):
 ### Band Segmentation ###########################################################################################################################################################################     
 # ╰┈➤ Segment the resistor bands from the resistor body: 
 
-def Band_Segmentation(inner_resistor):   
+def Band_Segmentation(inner_resistor):    
 
     ### Mask Shape Extraction --------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Extract inner dimensions and midpoints:
@@ -260,7 +260,7 @@ def Band_Segmentation(inner_resistor):
     ### Body Colour Subtraction ------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Find absolute difference between inner resistor and body colour to isolate bands:
     abs_diff = cv2.absdiff(inner_resistor, img_bodycolour)
-
+    
     ### OTSU Threshold ---------------------------------------------------------------------------------------------------------------------------------------------------
     # ╰┈➤ Automatic threshold on the absdiff image using HSV 'V' Channel to segment bands:
 
@@ -291,7 +291,6 @@ def Band_Segmentation(inner_resistor):
             band_mask_final[0:h, i] = 0
         else:
             band_mask_final[0:h, i] = 255
-
         
     return (band_mask_final, abs_diff)
 
@@ -634,24 +633,20 @@ def Decode_Resistance(band_classes, largest_separation_index, tolerance_lookup):
 
 def Display_Resistance(display_image, display_string, bounding_rect):
     
-    box = func.Display_Bounding(display_image, bounding_rect, (0,0,255), 10)            #Draw bounding box on mask                     
+    box = func.Display_Bounding(display_image, bounding_rect, (0,0,255), 10)            #Draw bounding box on image                  
 
-    # Sort the box points by their y-coordinate in ascending order
-    sorted_box = sorted(box, key=lambda point: point[1])
+    sorted_box = sorted(box, key=lambda point: point[1])                                # Sort the box points by their y-coordinate in ascending order
 
-    # The two upper-most points are the first two points in the sorted list
-    display_pointA = tuple(sorted_box[0])
+    display_pointA = tuple(sorted_box[0])                                               # The two upper-most points are the first two points in the sorted list
     display_pointB = tuple(sorted_box[1])
     
     textsize = cv2.getTextSize(display_string, cv2.FONT_HERSHEY_SIMPLEX, fontScale=2.5, thickness=8)[0]
 
-    display_x = int((display_pointA[0] + display_pointB[0])/2) - int(textsize[0]/2)
+    display_x = int((display_pointA[0] + display_pointB[0])/2) - int(textsize[0]/2)     #Centre text on desired position
     display_y = display_pointA[1] - 20
     display_point = (display_x, display_y)
-                    
+                                                                                        #Draw text on image
     cv2.putText(display_image, display_string, display_point, cv2.FONT_HERSHEY_SIMPLEX, fontScale=2.5, color=(0, 0, 200), thickness=8, lineType=cv2.LINE_AA)  
-
-    #display_image = func.PIL_writeText(display_image, display_string, (50, 50), colour=(200,0,0), fontsize=30)
     
     return display_image
 

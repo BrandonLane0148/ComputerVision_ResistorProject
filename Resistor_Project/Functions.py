@@ -140,13 +140,6 @@ def ExtractDominantColour(img, k_clusters, v_min=-1):
             second_most_common_centroid_index = np.argsort(np.bincount(labels.flatten()))[-2]   #Find the second most frequent label
             dominant_colour = centers[second_most_common_centroid_index]                        #Obtain the centre (colour) corresponding to the second most frequent label
                   
-    #centers = np.uint8(centers)                                                        #Obtain and display quantised image if desired for debug
-    #res = centers[labels.flatten()]
-    #preview = res.reshape((img.shape))
-    #cv2.imshow("Preview", preview)
-    #cv2.waitKey(0) # waits for user to press any key 
-    
-    #print(cv2.cvtColor(np.uint8([[dominant_colour]]), cv2.COLOR_BGR2HSV)[0][0])
     return dominant_colour
 
 

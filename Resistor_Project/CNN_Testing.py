@@ -1,7 +1,10 @@
+from tkinter import NORMAL
 import cv2 #opencv itself
 import numpy as np # matrix manipulations
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
 
 import Functions as func
 
@@ -12,7 +15,7 @@ colour_lookup =    ["Black", "Brown", "Red" , "Orange", "Yellow", "Green", "Blue
 
 training_data_dir = 'data_training/testing/' # Root directory of the training data
 
-# Load the trained CNN model q
+# Load the trained CNN model
 Colour_Classification_CNN = load_model('models/Colour_Classification_CNN.keras')
 
 Colour_Classification_CNN.summary()
@@ -30,7 +33,7 @@ test_set = test_datagen.flow_from_directory(
 )
 
 ###########################################################
-### Model Validation
+### Model Testing
 
 loss, accuracy, precision, recall = Colour_Classification_CNN.evaluate(test_set)
 print('Test Set loss:', loss)
@@ -39,6 +42,27 @@ print('Test Set precision:', precision)
 print('Test Set recall:', recall)
 
 
+
+#######
+### Confusion Matrix
+
+# Get the true labels
+true_classes = test_set.classes
+
+# Use the model to predict the output
+predictions = Colour_Classification_CNN.predict(test_set)
+
+# Get the predicted labels as the class with the highest probability
+predicted_classes = np.argmax(predictions, axis=1)
+
+# Generate the confusion matrix
+disp = ConfusionMatrixDisplay.from_predictions(true_classes, predicted_classes, cmap='binary', colorbar=False)
+disp.plot()
+plt.show()
+
+disp = ConfusionMatrixDisplay.from_predictions(true_classes, predicted_classes, normalize='true', cmap='Greens')
+disp.plot()
+plt.show()
 
 ###########################################################
 

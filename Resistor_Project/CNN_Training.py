@@ -67,15 +67,15 @@ def Preprocess_Random_Gamma(img):
 # Data augmentation
 training_datagen = ImageDataGenerator(
     rescale=1./255, 
-    #validation_split=0.2,
+    validation_split=0.2,
     horizontal_flip=True,
     vertical_flip=True,
     zoom_range=0.25)
     #preprocessing_function=Preprocess_Random_Gamma)
 
-#validation_datagen = ImageDataGenerator(
-#    rescale=1./255,
-#    validation_split=0.2)
+validation_datagen = ImageDataGenerator(
+    rescale=1./255,
+    validation_split=0.2)
 
 # Fits the model on batches with real-time data augmentation
 training_set = training_datagen.flow_from_directory(
@@ -87,28 +87,19 @@ training_set = training_datagen.flow_from_directory(
     shuffle=True,
     seed=142)  
 
-#validation_set = validation_datagen.flow_from_directory(
-#    training_data_dir,
-#    subset='validation',
-#    target_size=(30, 12),
-#    batch_size=batch_sz,
-#    class_mode='categorical',  # Changed class_mode to 'categorical'
-#    shuffle=True,
-#    seed=142)
-
-# Calculate the number of training images per class
-#num_images_per_class = [len(os.listdir(os.path.join(training_data_dir, class_name))) for class_name in sorted(os.listdir(training_data_dir))]
-
-# Calculate the total number of training images
-#total_num_images = sum(num_images_per_class)
-
-# Calculate the initial weights based on the number of training images per class
-#class_weights = {class_index: total_num_images / (num_images_per_class[class_index] * num_classes) for class_index in range(num_classes)}
+validation_set = validation_datagen.flow_from_directory(
+    training_data_dir,
+    subset='validation',
+    target_size=(30, 12),
+    batch_size=batch_sz,
+    class_mode='categorical',  # Changed class_mode to 'categorical'
+    shuffle=True,
+    seed=142)
 
 ###########################################################
 ### Model Training
-#history = model.fit(training_set, validation_data=validation_set, epochs=num_epochs)
-history = model.fit(training_set, epochs=num_epochs)
+history = model.fit(training_set, validation_data=validation_set, epochs=num_epochs)
+#history = model.fit(training_set, epochs=num_epochs)  #No validation set
 
 
 print('\n\n')
@@ -121,58 +112,58 @@ print('\n\n')
 ### Training History Plots
 
 # Plot training & validation accuracy values
-#plt.figure(figsize=(14,6))
+plt.figure(figsize=(14,6))
 
-#plt.subplot(1, 2, 1)
-#plt.plot(history.history['accuracy'])
-#plt.plot(history.history['val_accuracy'])
-#plt.title('Model accuracy')
-#plt.ylabel('Accuracy')
-#plt.xlabel('Epoch')
-#plt.legend(['Train', 'Validation'], loc='upper left')
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('Model accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
 
 # Plot training & validation loss values
-#plt.subplot(1, 2, 2)
-#plt.plot(history.history['loss'])
-#plt.plot(history.history['val_loss'])
-#plt.title('Model loss')
-#plt.ylabel('Loss')
-#plt.xlabel('Epoch')
-#plt.legend(['Train', 'Validation'], loc='upper left')
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('Model loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
 
-#plt.show()
+plt.show()
 
 # Plot training & validation precision values
-#plt.figure(figsize=(14,6))
+plt.figure(figsize=(14,6))
 
-#plt.subplot(1, 2, 1)
-#plt.plot(history.history['precision'])
-#plt.plot(history.history['val_precision'])
-#plt.title('Model Precision')
-#plt.ylabel('Precision')
-#plt.xlabel('Epoch')
-#plt.legend(['Train', 'Validation'], loc='upper left')
+plt.subplot(1, 2, 1)
+plt.plot(history.history['precision'])
+plt.plot(history.history['val_precision'])
+plt.title('Model Precision')
+plt.ylabel('Precision')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
 
 # Plot training & validation recall values
-#plt.subplot(1, 2, 2)
-#plt.plot(history.history['recall'])
-#plt.plot(history.history['val_recall'])
-#plt.title('Model Recall')
-#plt.ylabel('Recall')
-#plt.xlabel('Epoch')
-#plt.legend(['Train', 'Validation'], loc='upper left')
+plt.subplot(1, 2, 2)
+plt.plot(history.history['recall'])
+plt.plot(history.history['val_recall'])
+plt.title('Model Recall')
+plt.ylabel('Recall')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
 
-#plt.show()
+plt.show()
 
 
 ###########################################################
 ### Model Validation
 
-#loss, accuracy, precision, recall = model.evaluate(validation_set)
-#print('FINAL Validation loss:', loss)
-#print('FINAL Validation accuracy:', accuracy)
-#print('FINAL Validation precision:', precision)
-#print('FINAL Validation recall:', recall)
+loss, accuracy, precision, recall = model.evaluate(validation_set)
+print('FINAL Validation loss:', loss)
+print('FINAL Validation accuracy:', accuracy)
+print('FINAL Validation precision:', precision)
+print('FINAL Validation recall:', recall)
 
 ###########################################################
 ### Model Export
